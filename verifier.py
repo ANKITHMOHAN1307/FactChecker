@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import requests
 
@@ -22,68 +22,19 @@ TRUSTED_DOMAINS = [
     "statista.com",
 ]
 
-STOPWORDS = {
-    "the",
-    "a",
-    "an",
-    "and",
-    "or",
-    "of",
-    "in",
-    "to",
-    "for",
-    "on",
-    "with",
-    "by",
-    "from",
-    "at",
-    "is",
-    "was",
-    "were",
-    "be",
-    "as",
-    "that",
-    "this",
-    "it",
-}
-
-
 
 def _extract_numbers(text: str) -> List[str]:
-    """Extract plain numeric tokens for lightweight comparison."""
+    """Extract numbers like years, percentages, money values."""
     return re.findall(r"\d+\.?\d*", text)
 
 
-
-def _normalize_keywords(text: str) -> Set[str]:
-    """Convert text into comparable keywords for same-topic matching."""
-    words = re.findall(r"[a-zA-Z]{3,}", text.lower())
-    return {w for w in words if w not in STOPWORDS}
-
-
-
 def _is_trusted(url: str) -> bool:
+    """Check if the source belongs to a trusted domain."""
     return any(domain in url for domain in TRUSTED_DOMAINS)
 
 
-
-def _build_correct_information(result: Dict[str, str], status: str) -> str:
-    """Create readable evidence text for the UI."""
-    title = result.get("title", "").strip()
-    snippet = result.get("snippet", "").strip()
-    evidence_text = f"{title}. {snippet}".strip(" .")
-
-    if not evidence_text:
-        return "Trusted source found, but snippet details are unavailable."
-
-    if status == "Verified":
-        return f"Verified by source: {evidence_text}"
-    return f"Source evidence (not enough to verify): {evidence_text}"
-
-
-
 def search_claim(claim: str, api_key: Optional[str]) -> List[Dict[str, str]]:
-    """Run live Google search via SerpAPI using the full claim sentence."""
+    """Search the full claim using SerpAPI."""
     if not api_key:
         return []
 
@@ -103,71 +54,75 @@ def search_claim(claim: str, api_key: Optional[str]) -> List[Dict[str, str]]:
         return []
 
 
-
 def classify_claim(claim: str, results: List[Dict[str, str]]) -> Tuple[str, str, str]:
-    """Simple workflow: source+support => Verified, otherwise False."""
+    """
+    Simple classification logic
+
+    Rules:
+    1. No source found -> False
+    2. Trusted source + at least one number match -> Verified
+    3. Trusted source + numbers differ -> Inaccurate
+    """
+
+    # No results at all
     if not results:
         return (
             "False",
-            "No source found from live search (check API key/internet).",
-            "",
+            "No source found for this claim.",
+            ""
         )
 
-    trusted_results = [r for r in results if _is_trusted(r.get("link", ""))]
+    # Keep only trusted sources
+    trusted_results = [
+        r for r in results
+        if _is_trusted(r.get("link", ""))
+    ]
+
+    # No trusted source found
     if not trusted_results:
-        first = results[0]
         return (
             "False",
-            _build_correct_information(first, "False"),
-            first.get("link", ""),
+            "No trusted source found for this claim.",
+            results[0].get("link", "")
         )
 
+    # Check trusted sources one by one
     claim_numbers = set(_extract_numbers(claim))
-    claim_keywords = _normalize_keywords(claim)
 
     for result in trusted_results:
-        evidence_text = f"{result.get('title', '')} {result.get('snippet', '')}"
-        evidence_numbers = set(_extract_numbers(evidence_text))
-        evidence_keywords = _normalize_keywords(evidence_text)
+        source_text = (
+            result.get("title", "") + " " +
+            result.get("snippet", "")
+        )
 
-        keyword_overlap = len(claim_keywords.intersection(evidence_keywords))
-        same_topic = keyword_overlap >= 2
+        source_numbers = set(_extract_numbers(source_text))
 
-        # If claim has numbers, require same topic + at least one number match.
-        if claim_numbers:
-            if same_topic and claim_numbers.intersection(evidence_numbers):
-                return (
-                    "Verified",
-                    _build_correct_information(result, "Verified"),
-                    result.get("link", ""),
-                )
-        # If claim has no numbers, same-topic evidence is enough.
-        else:
-            if same_topic:
-                return (
-                    "Verified",
-                    _build_correct_information(result, "Verified"),
-                    result.get("link", ""),
-                )
+        # If at least one number matches -> Verified
+        if claim_numbers and claim_numbers.intersection(source_numbers):
+            return (
+                "Verified",
+                "Claim matches trusted source data.",
+                result.get("link", "")
+            )
 
-    # Source exists but does not support claim strongly enough.
-    fallback = trusted_results[0]
+    # Trusted source exists but values differ
+    first_result = trusted_results[0]
     return (
-        "False",
-        _build_correct_information(fallback, "False"),
-        fallback.get("link", ""),
+        "Inaccurate",
+        "Claim does not fully match trusted source data.",
+        first_result.get("link", "")
     )
 
 
-
 def verify_claims(claims: List[str]) -> List[Dict[str, str]]:
-    """Verify all claims and return rows for the UI table."""
+    """Verify all claims and return rows for Streamlit table."""
     api_key = os.getenv("SERPAPI_API_KEY", "")
     rows: List[Dict[str, str]] = []
 
     for claim in claims:
-        results = search_claim(claim, api_key=api_key)
+        results = search_claim(claim, api_key)
         status, correct_information, source_link = classify_claim(claim, results)
+
         rows.append(
             {
                 "claim": claim,
