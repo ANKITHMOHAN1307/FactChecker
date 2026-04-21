@@ -8,43 +8,54 @@ from typing import Iterable, List
 
 import pdfplumber
 
-# ---------------------------------------------------------------------------
-# Numeric patterns that are strong signals of a factual/statistical claim.
-# ---------------------------------------------------------------------------
-NUMERIC_CLAIM_PATTERNS = [
-    re.compile(r"\b\d{1,3}(?:,\d{3})*(?:\.\d+)?%\b"),                         # percentages: 32%
-    re.compile(r"[$₹€£]\s?\d+(?:,\d{3})*(?:\.\d+)?\b"),                       # currencies: $50 billion
-    re.compile(r"\b(19|20)\d{2}\b"),                                            # years: 2024
-    re.compile(r"\b\d+(?:\.\d+)?\s?(million|billion|trillion)\b", re.I),       # magnitudes
-    re.compile(r"\bQ[1-4]\b", re.I),                                            # quarters: Q1/Q2
-    re.compile(r"\b\d+(?:\.\d+)?\s?(km|kg|gb|tb|mhz|ghz|mw|kw)\b", re.I),    # units
+# Regex patterns that identify claim-like numeric statements.
+CLAIM_PATTERNS = [
+    re.compile(r"\b\d{1,3}(?:,\d{3})*(?:\.\d+)?%\b"),  # percentages like 32%
+    re.compile(r"[$₹€£]\s?\d+(?:,\d{3})*(?:\.\d+)?\b"),  # currencies
+    re.compile(r"\b(19|20)\d{2}\b"),  # years like 2024
+    re.compile(r"\b\d+(?:\.\d+)?\s?(million|billion|trillion)\b", re.I),
+    re.compile(r"\bQ[1-4]\b", re.I),  # quarter numbers (Q1/Q2)
+    re.compile(r"\b\d+(?:\.\d+)?\s?(km|kg|gb|tb|mhz|ghz|mw|kw)\b", re.I),
     re.compile(r"\b\d{1,2}\s?(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s?\d{2,4}\b", re.I),
 ]
 
-# ---------------------------------------------------------------------------
-# Keyword signals that identify non-numeric factual claims.
-# e.g. "The Eiffel Tower is located in Berlin."
-# ---------------------------------------------------------------------------
-FACTUAL_KEYWORD_PATTERNS = [
-    re.compile(r"\b(is|are|was|were)\s+(located|situated|found|based|known|called|named|built|made|invented|discovered|founded|created|established)\b", re.I),
-    re.compile(r"\b(capital|largest|smallest|highest|lowest|first|last|only|oldest|newest)\b", re.I),
-    re.compile(r"\b(visible|invisible|possible|impossible|true|false|myth|fact)\b", re.I),
-    re.compile(r"\b(never|always|only|all|none|every)\b", re.I),
-    re.compile(r"\b(humans?|animals?|plants?|species|mammals?|reptiles?|birds?)\b", re.I),
-    re.compile(r"\b(named after|part of|type of|kind of|form of|made of|composed of)\b", re.I),
-]
+# Signal words that frequently appear in factual long-form statements.
+FACT_KEYWORDS = {
+    "according",
+    "reported",
+    "announced",
+    "stated",
+    "confirmed",
+    "founded",
+    "headquartered",
+    "launched",
+    "acquired",
+    "ranked",
+    "largest",
+    "smallest",
+    "population",
+    "gdp",
+    "inflation",
+    "revenue",
+    "profit",
+    "market",
+    "technology",
+    "capacity",
+    "production",
+}
 
-# Minimum character length for a sentence to be considered a claim.
-MIN_SENTENCE_LENGTH = 20
-MIN_WORD_COUNT = 4
+FACT_VERBS_PATTERN = re.compile(
+    r"\b(is|are|was|were|has|have|had|became|remains|includes|contains|accounts for|grew|declined)\b",
+    re.I,
+)
+
+# Very short, title-like lines are usually noise for this task.
+MIN_LINE_LENGTH = 25
 
 
-# ---------------------------------------------------------------------------
-# PDF helpers
-# ---------------------------------------------------------------------------
 
 def extract_text_lines_from_pdf(pdf_file: io.BytesIO) -> List[str]:
-    """Extract full text from every PDF page and return clean non-empty lines."""
+    """Extract text from every PDF page and return clean non-empty lines."""
     all_lines: List[str] = []
 
     with pdfplumber.open(pdf_file) as pdf:
@@ -56,67 +67,60 @@ def extract_text_lines_from_pdf(pdf_file: io.BytesIO) -> List[str]:
     return all_lines
 
 
-def _split_into_sentences(lines: Iterable[str]) -> List[str]:
-    """
-    Join all lines into a single block of text, then split on sentence boundaries.
-    This handles PDFs where a paragraph of multiple sentences appears on one line,
-    as well as line-wrapped text where a single sentence spans multiple lines.
-    """
-    full_text = " ".join(lines)
-    # Split on '. ', '! ', '? ' followed by a capital letter, or end of string.
-    raw_sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z])', full_text)
-    sentences: List[str] = []
-    for s in raw_sentences:
-        s = s.strip()
-        if s:
-            sentences.append(s)
-    return sentences
 
-
-# ---------------------------------------------------------------------------
-# Claim detection
-# ---------------------------------------------------------------------------
-
-def _is_meaningful_sentence(sentence: str) -> bool:
-    """Return True if the sentence is long enough to be a real claim."""
-    if len(sentence) < MIN_SENTENCE_LENGTH:
+def is_meaningful_line(line: str) -> bool:
+    """Filter out obvious headings and incomplete fragments."""
+    if len(line) < MIN_LINE_LENGTH:
         return False
-    if len(sentence.split()) < MIN_WORD_COUNT:
-        return False
+
     # Skip heading-like all-caps lines without punctuation.
-    if sentence.isupper() and not re.search(r"[.,:;%$₹€£]", sentence):
+    if line.isupper() and not re.search(r"[.,:;%$₹€£]", line):
         return False
+
+    # Skip lines that have too few words.
+    if len(line.split()) < 5:
+        return False
+
     return True
 
 
-def _has_claim_signal(sentence: str) -> bool:
-    """Return True if the sentence contains a numeric OR a factual keyword signal."""
-    for pattern in NUMERIC_CLAIM_PATTERNS:
-        if pattern.search(sentence):
-            return True
-    for pattern in FACTUAL_KEYWORD_PATTERNS:
-        if pattern.search(sentence):
-            return True
-    return False
+
+def looks_like_long_factual_statement(line: str) -> bool:
+    """Detect long factual statements even when they do not include numbers."""
+    words = line.split()
+    if len(words) < 10:
+        return False
+
+    lowered = line.lower()
+    has_fact_keyword = any(keyword in lowered for keyword in FACT_KEYWORDS)
+    has_fact_verb = bool(FACT_VERBS_PATTERN.search(line))
+
+    # Heuristic for named entities (e.g., "World Health Organization", "Microsoft Corporation")
+    has_named_entity_cue = bool(re.search(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b", line))
+
+    # A long sentence with factual language + entity cue is usually a checkable claim.
+    return has_fact_verb and (has_fact_keyword or has_named_entity_cue)
+
 
 
 def detect_factual_claims(lines: Iterable[str]) -> List[str]:
-    """
-    Split lines into individual sentences, then return unique sentences that
-    look like factual or statistical claims (numeric OR non-numeric).
-    """
-    sentences = _split_into_sentences(lines)
+    """Return unique lines that look like factual/statistical claims."""
     claims: List[str] = []
-    seen: set = set()
+    seen = set()
 
-    for raw_sentence in sentences:
-        sentence = " ".join(raw_sentence.split())
-        if not _is_meaningful_sentence(sentence):
+    for raw_line in lines:
+        line = " ".join(raw_line.split())
+        if not is_meaningful_line(line):
             continue
-        if not _has_claim_signal(sentence):
+
+        has_numeric_signal = any(pattern.search(line) for pattern in CLAIM_PATTERNS)
+        has_long_fact_signal = looks_like_long_factual_statement(line)
+
+        if not (has_numeric_signal or has_long_fact_signal):
             continue
-        if sentence not in seen:
-            seen.add(sentence)
-            claims.append(sentence)
+
+        if line not in seen:
+            seen.add(line)
+            claims.append(line)
 
     return claims
