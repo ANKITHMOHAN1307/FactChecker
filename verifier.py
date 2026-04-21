@@ -1,4 +1,4 @@
-"""Claim verification logic using SerpAPI web search results."""
+"""Claim verification logic using SerpAPI + better comparison rules."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ import requests
 
 SERPAPI_ENDPOINT = "https://serpapi.com/search.json"
 
-# Trusted sources for higher-confidence checks
 TRUSTED_DOMAINS = [
     ".gov",
     ".edu",
@@ -23,26 +22,77 @@ TRUSTED_DOMAINS = [
     "bloomberg.com",
     "statista.com",
     "sec.gov",
+    "macrotrends.net",
     "finance.yahoo.com",
+    "annualreports.com",
     "ourworldindata.org",
+    "wikipedia.org",
 ]
 
-# Ignore common standalone years to reduce weak matches
-IGNORE_NUMBERS = {"2023", "2024", "2025", "2026"}
+# Common years ignored for business-value comparison only
+IGNORE_COMMON_YEARS = {"2023", "2024", "2025", "2026"}
+
+# Historical claim words → year matching logic
+YEAR_BASED_KEYWORDS = [
+    "founded",
+    "created",
+    "launched",
+    "established",
+    "started",
+    "began",
+]
+
+# Business/statistical claims → strict numeric comparison
+STRICT_VALUE_KEYWORDS = [
+    "revenue",
+    "inflation",
+    "gdp",
+    "population",
+    "temperature",
+    "profit",
+    "worth",
+    "valuation",
+    "market cap",
+]
 
 
 def _extract_numbers(text: str) -> List[str]:
-    """Extract number-like tokens from text."""
+    """
+    Extract all numbers from text
+    Example:
+    'Founded on Sep 4, 1998' -> ['4', '1998']
+    """
     return re.findall(r"\d+\.?\d*", text)
 
 
 def _is_trusted(url: str) -> bool:
-    """Return True when the URL appears to be from a trusted domain."""
+    """
+    Check if source is trusted
+    """
     return any(domain in url for domain in TRUSTED_DOMAINS)
 
 
+def _is_year_based_claim(claim: str) -> bool:
+    """
+    Detect historical claims like:
+    founded, created, launched
+    """
+    claim_lower = claim.lower()
+    return any(word in claim_lower for word in YEAR_BASED_KEYWORDS)
+
+
+def _is_strict_value_claim(claim: str) -> bool:
+    """
+    Detect business/statistical claims
+    """
+    claim_lower = claim.lower()
+    return any(word in claim_lower for word in STRICT_VALUE_KEYWORDS)
+
+
 def search_claim(claim: str, api_key: Optional[str]) -> List[Dict[str, str]]:
-    """Search one claim against live web results via SerpAPI."""
+    """
+    Search claim using SerpAPI
+    """
     if not api_key:
         return []
 
@@ -54,109 +104,155 @@ def search_claim(claim: str, api_key: Optional[str]) -> List[Dict[str, str]]:
     }
 
     try:
-        response = requests.get(SERPAPI_ENDPOINT, params=params, timeout=20)
+        response = requests.get(
+            SERPAPI_ENDPOINT,
+            params=params,
+            timeout=20,
+        )
         response.raise_for_status()
         data = response.json()
         return data.get("organic_results", [])
+
     except requests.RequestException:
         return []
 
 
-def classify_claim(claim: str, results: List[Dict[str, str]]) -> Tuple[str, str, str]:
+def classify_claim(
+    claim: str,
+    results: List[Dict[str, str]],
+) -> Optional[Tuple[str, str, str]]:
     """
-    Return one of:
-    - Verified: trusted evidence supports the claim numbers
-    - Inaccurate: trusted evidence exists but conflicts
-    - False: no credible evidence found
+    Smart verification logic
+
+    RULES:
+
+    1. No trusted source -> skip output
+
+    2. Historical claims:
+       Example:
+       Google founded in 1998
+
+       If year exists in source:
+       -> Verified
+
+    3. Revenue/statistical claims:
+       Example:
+       Apple revenue = 50B
+
+       Need strong numeric match:
+       -> Verified
+
+       Wrong values:
+       -> Inaccurate
     """
 
-    # No results means no supporting evidence from live search
     if not results:
-        return (
-            "False",
-            "No evidence found in live search results.",
-            "",
-        )
+        return None
 
-    trusted_results = [r for r in results if _is_trusted(r.get("link", ""))]
+    trusted_results = [
+        r for r in results
+        if _is_trusted(r.get("link", ""))
+    ]
 
-    # If we have results but none are trusted, still treat as no credible evidence
     if not trusted_results:
-        first_link = results[0].get("link", "") if results else ""
-        return (
-            "False",
-            "No credible trusted source found for this claim.",
-            first_link,
-        )
+        return None
 
-    claim_numbers = {n for n in _extract_numbers(claim) if n not in IGNORE_NUMBERS}
+    claim_numbers = set(_extract_numbers(claim))
 
-    # For non-numeric claims, require direct phrase support in trusted snippets/titles
     if not claim_numbers:
-        claim_words = {w.lower() for w in re.findall(r"[A-Za-z]{4,}", claim)}
-        claim_words = {
-            w
-            for w in claim_words
-            if w not in {"that", "with", "from", "this", "have", "were", "will", "been"}
-        }
+        return None
 
-        for result in trusted_results:
-            source_text = (result.get("title", "") + " " + result.get("snippet", "")).lower()
-            overlap = [w for w in claim_words if w in source_text]
-            # Simple threshold so random overlap does not pass
-            if claim_words and len(overlap) >= max(2, len(claim_words) // 3):
-                return (
-                    "Verified",
-                    "Trusted source text supports this non-numeric claim.",
-                    result.get("link", ""),
-                )
+    is_year_claim = _is_year_based_claim(claim)
+    is_value_claim = _is_strict_value_claim(claim)
 
-        return (
-            "Inaccurate",
-            "Trusted sources found, but support for this wording is weak.",
-            trusted_results[0].get("link", ""),
-        )
-
-    # Numeric claims: compare numbers against trusted snippets
-    fallback_link = trusted_results[0].get("link", "")
+    best_fallback = trusted_results[0]
 
     for result in trusted_results:
-        source_text = result.get("title", "") + " " + result.get("snippet", "")
-        source_numbers = {n for n in _extract_numbers(source_text) if n not in IGNORE_NUMBERS}
+        source_text = (
+            result.get("title", "") + " " +
+            result.get("snippet", "")
+        )
 
-        # Strong match: all important values match
-        if claim_numbers == source_numbers and claim_numbers:
-            return (
-                "Verified",
-                "Claim values strongly match trusted source data.",
-                result.get("link", ""),
-            )
+        source_numbers = set(_extract_numbers(source_text))
 
-        # Practical match: at least one key value overlaps
-        if claim_numbers.intersection(source_numbers):
-            return (
-                "Verified",
-                "Claim is supported by overlapping values in trusted source.",
-                result.get("link", ""),
-            )
+        # --------------------------------
+        # CASE 1: Historical Year Claims
+        # Example: founded in 1998
+        # --------------------------------
+        if is_year_claim:
+            # if any claim year exists in source
+            if claim_numbers.intersection(source_numbers):
+                return (
+                    "Verified",
+                    "Historical year matches trusted source.",
+                    result.get("link", "")
+                )
 
+        # --------------------------------
+        # CASE 2: Business Value Claims
+        # Example: revenue, GDP, inflation
+        # --------------------------------
+        elif is_value_claim:
+            important_claim_numbers = {
+                n for n in claim_numbers
+                if n not in IGNORE_COMMON_YEARS
+            }
+
+            important_source_numbers = {
+                n for n in source_numbers
+                if n not in IGNORE_COMMON_YEARS
+            }
+
+            # exact important number match
+            if (
+                important_claim_numbers
+                and important_claim_numbers.intersection(
+                    important_source_numbers
+                )
+            ):
+                return (
+                    "Verified",
+                    "Claim matches trusted source values.",
+                    result.get("link", "")
+                )
+
+        best_fallback = result
+
+    # --------------------------------
+    # If trusted source exists
+    # but values differ
+    # --------------------------------
     return (
         "Inaccurate",
-        "Trusted sources were found, but the values do not match this claim.",
-        fallback_link,
+        "Claim does not match trusted source data.",
+        best_fallback.get("link", "")
     )
 
 
 def verify_claims(claims: List[str]) -> List[Dict[str, str]]:
-    """Verify all extracted claims and build rows for UI display."""
+    """
+    Verify all claims
+    Return rows for Streamlit table
+    """
 
     api_key = os.getenv("SERPAPI_API_KEY", "")
     rows: List[Dict[str, str]] = []
 
     for claim in claims:
-        # Run live search for each claim sentence
-        results = search_claim(claim, api_key)
-        status, correct_information, source_link = classify_claim(claim, results)
+        results = search_claim(
+            claim,
+            api_key=api_key,
+        )
+
+        classified = classify_claim(
+            claim,
+            results,
+        )
+
+        if not classified:
+            continue
+
+        status, correct_information, source_link = classified
 
         rows.append(
             {
