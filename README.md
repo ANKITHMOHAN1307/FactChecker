@@ -1,98 +1,79 @@
 # Fact-Check Web App (Streamlit + Python)
 
-A simple web app that lets you upload a PDF and automatically fact-check claim-like lines (percentages, money values, years, and technical numbers) using live web search.
+A simple web app that uploads a PDF, extracts factual claims, and returns a direct verdict for each claim:
 
-## What this project does
+- **Verified**
+- **Not Verified**
 
-- Uploads a PDF file.
-- Extracts text line by line.
-- Detects factual claims using regex patterns.
-- Sends each full claim sentence to live web search (SerpAPI).
-- Labels each claim as:
-  - **Verified** (trusted source matches)
-  - **Inaccurate** (similar claim exists, but numbers look different/outdated)
-  - **False** (no strong trusted evidence)
+## Features
 
-## How it works (simple flow)
+- Upload a PDF in Streamlit.
+- Extract claim-like lines from text.
+- Verify each claim using the **Groq API**.
+- Show a clean table with claim + verdict.
 
-1. **PDF Extraction** (`extractor.py`)
-   - Uses `pdfplumber` to read text from all pages.
-2. **Claim Detection** (`extractor.py`)
-   - Keeps lines with factual signals such as `%`, currency, years, million/billion, and technical units.
-   - Filters out very short and heading-like lines.
-3. **Verification** (`verifier.py`)
-   - Uses **full claim sentence** as query in SerpAPI.
-   - Checks trusted domains and compares numbers in evidence snippets.
-4. **UI Output** (`app.py`)
-   - Displays results in a table with claim, status, correction/evidence, and source link.
-
-## Tech stack
+## Tech Stack
 
 - Python
 - Streamlit
 - pdfplumber
 - requests
-- SerpAPI (Google Search results API)
+- Groq API
 
-## Project structure
+## Files
 
 ```text
-fact_check_app/
-│
+/workspace/FactChecker
 ├── app.py
 ├── extractor.py
 ├── verifier.py
 ├── requirements.txt
-├── README.md
-└── .gitignore
+└── README.md
 ```
 
-> In this repository, these files are in the root for easy Streamlit deployment.
+## Local Run
 
-## Run locally
-
-1. Create and activate a virtual environment (optional but recommended).
-2. Install dependencies:
+1. Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Set your SerpAPI key:
+2. Add your Groq key:
 
 ```bash
-export SERPAPI_API_KEY="your_key_here"
+export GROQ_API_KEY="your_groq_api_key"
 ```
 
-4. Run the app:
+3. Start app:
 
 ```bash
 streamlit run app.py
 ```
 
-## Deploy on Streamlit Community Cloud
+## Streamlit Cloud Deployment
 
-1. Push this repository to GitHub.
-2. In Streamlit Community Cloud, create a new app from this repo.
+1. Push this repo to GitHub.
+2. Create a new app at https://share.streamlit.io/.
 3. Set **Main file path** to `app.py`.
-4. Add secret:
-   - `SERPAPI_API_KEY = "your_key_here"`
-5. Deploy.
+4. Add this secret:
 
-The deployed app works exactly like local run: upload PDF → click **Start Verification** → view fact-check table.
+```toml
+GROQ_API_KEY = "your_groq_api_key"
+```
 
-## Example workflow
+5. Deploy and open your public URL.
 
-1. Upload a report PDF.
-2. App detects lines like:
-   - "Revenue increased by 32% in Q2 2024"
-   - "The company reached $5 billion valuation"
-3. App searches web using the full line.
-4. App shows result status + best trusted source link.
+## Output Format
 
-## Notes for assignment/interview
+The app output is intentionally minimal:
 
-- Code is intentionally simple and function-based.
-- Logic is retrieval-first and explainable.
-- No heavy AI pipeline or overengineering.
-- Easy to extend with better domain rules later.
+| Extracted Claim | Status |
+|---|---|
+| "Global EV sales were 14 million in 2023" | Verified |
+| "XYZ company revenue was $900B" | Not Verified |
+
+## Notes
+
+- The verifier is intentionally simple and gives only direct verdict output.
+- No domain/source ranking logic is used.
