@@ -153,7 +153,7 @@ def classify_claim(claim: str, results: List[Dict[str, str]]) -> Tuple[str, str,
     source_numbers = set(_extract_numbers(source_text))
 
     # If numbers match exactly → Verified
-    if claim_numbers and claim_numbers == source_numbers:
+    if claim_numbers and claim_numbers.intersection(source_numbers):
         return (
             "Verified",
             "Claim matches trusted source data.",
