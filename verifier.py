@@ -89,6 +89,7 @@ def classify_claim(claim: str, results: List[Dict[str, str]]) -> Optional[Tuple[
         return None
 
     # Check trusted sources one by one
+    claim_numbers = ()
     claim_numbers = set(_extract_numbers(claim))
 
     for result in trusted_results:
