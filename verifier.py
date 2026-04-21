@@ -54,7 +54,7 @@ def search_claim(claim: str, api_key: Optional[str]) -> List[Dict[str, str]]:
         return []
 
 
-def classify_claim(claim: str, results: List[Dict[str, str]]) -> Tuple[str, str, str]:
+def classify_claim(claim: str, results: List[Dict[str, str]]) -> Optional[Tuple[str, str, str]]:
     """
     Simple classification logic
 
@@ -66,11 +66,7 @@ def classify_claim(claim: str, results: List[Dict[str, str]]) -> Tuple[str, str,
 
     # No results at all
     if not results:
-        return (
-            "False",
-            "No source found for this claim.",
-            ""
-        )
+        return None
 
     # Keep only trusted sources
     trusted_results = [
@@ -80,11 +76,7 @@ def classify_claim(claim: str, results: List[Dict[str, str]]) -> Tuple[str, str,
 
     # No trusted source found
     if not trusted_results:
-        return (
-            "False",
-            "No trusted source found for this claim.",
-            results[0].get("link", "")
-        )
+        return None
 
     # Check trusted sources one by one
     claim_numbers = set(_extract_numbers(claim))
@@ -97,13 +89,25 @@ def classify_claim(claim: str, results: List[Dict[str, str]]) -> Tuple[str, str,
 
         source_numbers = set(_extract_numbers(source_text))
 
-        # If at least one number matches -> Verified
-        if claim_numbers and claim_numbers.intersection(source_numbers):
-            return (
-                "Verified",
-                "Claim matches trusted source data.",
-                result.get("link", "")
-            )
+        # Verified only when most important numbers match strongly
+        common_numbers = claim_numbers.intersection(source_numbers)
+
+        # Require stronger match: at least 2 matching numbers
+        # or exact match when claim has only 1 number
+        if claim_numbers:
+            if len(claim_numbers) == 1 and common_numbers == claim_numbers:
+                return (
+                    "Verified",
+                    "Claim matches trusted source data.",
+                    result.get("link", "")
+                )
+
+            if len(common_numbers) >= 2:
+                return (
+                    "Verified",
+                    "Claim matches trusted source data.",
+                    result.get("link", "")
+                )
 
     # Trusted source exists but values differ
     first_result = trusted_results[0]
@@ -121,7 +125,12 @@ def verify_claims(claims: List[str]) -> List[Dict[str, str]]:
 
     for claim in claims:
         results = search_claim(claim, api_key)
-        status, correct_information, source_link = classify_claim(claim, results)
+        classified = classify_claim(claim, results)
+
+        if not classified:
+            continue
+
+        status, correct_information, source_link = classified
 
         rows.append(
             {
