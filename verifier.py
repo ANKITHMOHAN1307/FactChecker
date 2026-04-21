@@ -108,60 +108,64 @@ def search_claim(claim: str, api_key: Optional[str]) -> List[Dict[str, str]]:
 
 
 def classify_claim(claim: str, results: List[Dict[str, str]]) -> Tuple[str, str, str]:
-    """Classify claim with explicit numeric-comparison layer before final status."""
+    """
+    Simple classification logic
+
+    Rules:
+    1. If no trusted source found → False
+    2. If claim numbers match source numbers → Verified
+    3. If source exists but numbers do not match → Inaccurate
+    """
+
+    # No search results at all
     if not results:
         return (
             "False",
-            "No search evidence found (check API key or internet access).",
-            "",
+            "No source found for this claim.",
+            ""
         )
 
-    trusted_results = [r for r in results if _is_trusted(r.get("link", ""))]
+    # Keep only trusted sources
+    trusted_results = [
+        r for r in results
+        if _is_trusted(r.get("link", ""))
+    ]
+
+    # No trusted source found
     if not trusted_results:
-        first_result = results[0]
         return (
             "False",
-            _build_correct_information(first_result, "False"),
-            first_result.get("link", ""),
+            "No trusted source found for this claim.",
+            results[0].get("link", "")
         )
 
+    # Take first trusted source only (simple approach)
+    result = trusted_results[0]
+
+    # Extract numbers from claim and source
     claim_numbers = set(_extract_numbers(claim))
-    claim_keywords = _normalize_keywords(claim)
 
-    best_related_result: Optional[Dict[str, str]] = None
-
-    for result in trusted_results:
-        evidence_text = f"{result.get('title', '')} {result.get('snippet', '')}"
-        evidence_numbers = set(_extract_numbers(evidence_text))
-        evidence_keywords = _normalize_keywords(evidence_text)
-
-        overlap_count = len(claim_keywords.intersection(evidence_keywords))
-        same_topic = overlap_count >= 2
-
-        if claim_numbers and evidence_numbers and claim_numbers == evidence_numbers:
-            return (
-                "Verified",
-                _build_correct_information(result, "Verified"),
-                result.get("link", ""),
-            )
-
-        if same_topic:
-            best_related_result = result
-
-    if best_related_result is not None:
-        return (
-            "Inaccurate",
-            _build_correct_information(best_related_result, "Inaccurate"),
-            best_related_result.get("link", ""),
-        )
-
-    fallback = trusted_results[0]
-    return (
-        "False",
-        _build_correct_information(fallback, "False"),
-        fallback.get("link", ""),
+    source_text = (
+        result.get("title", "") + " " +
+        result.get("snippet", "")
     )
 
+    source_numbers = set(_extract_numbers(source_text))
+
+    # If numbers match exactly → Verified
+    if claim_numbers and claim_numbers == source_numbers:
+        return (
+            "Verified",
+            "Claim matches trusted source data.",
+            result.get("link", "")
+        )
+
+    # Source exists but values differ → Inaccurate
+    return (
+        "Inaccurate",
+        "Claim does not fully match trusted source data.",
+        result.get("link", "")
+    )
 
 
 def verify_claims(claims: List[str]) -> List[Dict[str, str]]:
