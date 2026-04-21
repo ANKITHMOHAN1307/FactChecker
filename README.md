@@ -1,98 +1,114 @@
 # Fact-Check Web App (Streamlit + Python)
 
-A simple web app that lets you upload a PDF and automatically fact-check claim-like lines (percentages, money values, years, and technical numbers) using live web search.
+A simple web app that uploads a PDF, extracts factual claims, checks those claims against live web data, and marks each claim as **Verified**, **Inaccurate**, or **False**.
 
-## What this project does
+---
 
-- Uploads a PDF file.
-- Extracts text line by line.
-- Detects factual claims using regex patterns.
-- Sends each full claim sentence to live web search (SerpAPI).
-- Labels each claim as:
-  - **Verified** (trusted source matches)
-  - **Inaccurate** (similar claim exists, but numbers look different/outdated)
-  - **False** (no strong trusted evidence)
+## Features
 
-## How it works (simple flow)
+- **Extract** factual claim-like lines from a PDF (stats, years, money, technical values).
+- **Verify** claims with live Google results via SerpAPI.
+- **Report** with clear statuses:
+  - **Verified**: trusted evidence supports the claim.
+  - **Inaccurate**: trusted evidence exists but conflicts/looks outdated.
+  - **False**: no credible evidence found.
 
-1. **PDF Extraction** (`extractor.py`)
-   - Uses `pdfplumber` to read text from all pages.
-2. **Claim Detection** (`extractor.py`)
-   - Keeps lines with factual signals such as `%`, currency, years, million/billion, and technical units.
-   - Filters out very short and heading-like lines.
-3. **Verification** (`verifier.py`)
-   - Uses **full claim sentence** as query in SerpAPI.
-   - Checks trusted domains and compares numbers in evidence snippets.
-4. **UI Output** (`app.py`)
-   - Displays results in a table with claim, status, correction/evidence, and source link.
+---
 
-## Tech stack
+## Tech Stack
 
 - Python
 - Streamlit
 - pdfplumber
 - requests
-- SerpAPI (Google Search results API)
+- SerpAPI
 
-## Project structure
+---
+
+## Project Structure
 
 ```text
-fact_check_app/
-│
+/workspace/FactChecker
 ├── app.py
 ├── extractor.py
 ├── verifier.py
 ├── requirements.txt
-├── README.md
-└── .gitignore
+└── README.md
 ```
 
-> In this repository, these files are in the root for easy Streamlit deployment.
+---
 
-## Run locally
+## Local Setup
 
-1. Create and activate a virtual environment (optional but recommended).
-2. Install dependencies:
+1. Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Set your SerpAPI key:
+2. Add your SerpAPI key:
 
 ```bash
-export SERPAPI_API_KEY="your_key_here"
+export SERPAPI_API_KEY="your_serpapi_key"
 ```
 
-4. Run the app:
+3. Run app:
 
 ```bash
 streamlit run app.py
 ```
 
-## Deploy on Streamlit Community Cloud
+4. Open the local URL shown by Streamlit and upload your PDF.
+
+---
+
+## Deployment (Mandatory Requirement)
+
+Use **Streamlit Community Cloud**:
 
 1. Push this repository to GitHub.
-2. In Streamlit Community Cloud, create a new app from this repo.
+2. Go to https://share.streamlit.io/ and create a new app.
 3. Set **Main file path** to `app.py`.
-4. Add secret:
-   - `SERPAPI_API_KEY = "your_key_here"`
-5. Deploy.
+4. In app settings → **Secrets**, add:
 
-The deployed app works exactly like local run: upload PDF → click **Start Verification** → view fact-check table.
+```toml
+SERPAPI_API_KEY = "your_serpapi_key"
+```
 
-## Example workflow
+5. Deploy and copy your public URL.
 
-1. Upload a report PDF.
-2. App detects lines like:
-   - "Revenue increased by 32% in Q2 2024"
-   - "The company reached $5 billion valuation"
-3. App searches web using the full line.
-4. App shows result status + best trusted source link.
+### After Deploy
 
-## Notes for assignment/interview
+- Test by uploading your own PDF.
+- Click **Start Verification**.
+- Review claim-by-claim status and source links.
 
-- Code is intentionally simple and function-based.
-- Logic is retrieval-first and explainable.
-- No heavy AI pipeline or overengineering.
-- Easy to extend with better domain rules later.
+> Note: Deployment URL depends on your Streamlit account/repo name and is created during your own deploy step.
+
+---
+
+## How Verification Works
+
+1. `extractor.py` reads PDF text line by line.
+2. It keeps lines likely to contain factual claims.
+3. `verifier.py` sends each claim to live search.
+4. The verifier checks trusted sources and number overlap.
+5. UI displays final status and source link.
+
+---
+
+## Example Output
+
+| Extracted Claim | Status | Correct Information | Source Link |
+|---|---|---|---|
+| "Revenue grew 25% in 2024" | Inaccurate | Trusted sources found, but values do not match this claim. | https://... |
+| "X country population is 1.4 billion" | Verified | Claim is supported by overlapping values in trusted source. | https://... |
+| "Y is the capital of Z" | False | No credible trusted source found for this claim. | https://... |
+
+---
+
+## Notes
+
+- Code is intentionally simple and readable.
+- Comments are kept basic for easy review.
+- You can improve accuracy by expanding trusted sources and adding stronger NLP claim extraction.
