@@ -20,6 +20,16 @@ TRUSTED_DOMAINS = [
     "reuters.com",
     "bloomberg.com",
     "statista.com",
+    "sec.gov",
+    "britannica.com",
+    "investopedia.com",
+    "forbes.com",
+    "macrotrends.net",
+    "companiesmarketcap.com",
+    "finance.yahoo.com",
+    "annualreports.com",
+    "tradingeconomics.com",
+    "ourworldindata.org",
 ]
 
 
