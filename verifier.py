@@ -22,14 +22,44 @@ TRUSTED_DOMAINS = [
     "statista.com",
 ]
 
+STOPWORDS = {
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "of",
+    "in",
+    "to",
+    "for",
+    "on",
+    "with",
+    "by",
+    "from",
+    "at",
+    "is",
+    "was",
+    "were",
+    "be",
+    "as",
+    "that",
+    "this",
+    "it",
+}
+
 
 
 def _extract_numbers(text: str) -> List[str]:
-    """Extract normalized numeric tokens for lightweight comparison."""
-    raw_nums = re.findall(r"[$₹€£]?\d+(?:,\d{3})*(?:\.\d+)?%?", text)
-    return [num.replace(",", "").strip() for num in raw_nums]
+    """Step 1/2: Extract numbers using the requested regex pattern."""
+    # Requested pattern from review instructions.
+    return re.findall(r"\d+\.?\d*", text)
 
 
+
+def _normalize_keywords(text: str) -> Set[str]:
+    """Small helper to compare if claim and snippet are about the same topic."""
+    words = re.findall(r"[a-zA-Z]{3,}", text.lower())
+    return {w for w in words if w not in STOPWORDS}
 
 def _is_trusted(url: str) -> bool:
     return any(domain in url for domain in TRUSTED_DOMAINS)
@@ -43,7 +73,7 @@ def search_claim(claim: str, api_key: Optional[str]) -> List[Dict[str, str]]:
 
     params = {
         "engine": "google",
-        "q": claim,  # full claim, not isolated numbers
+        "q": claim,  # full claim
         "api_key": api_key,
         "num": 5,
     }
@@ -74,26 +104,49 @@ def classify_claim(claim: str, results: List[Dict[str, str]]) -> Tuple[str, str,
             "No trusted-source result found for this claim.",
             results[0].get("link", ""),
         )
-
+     # Step 1: Extract numbers from claim.
     claim_numbers = set(_extract_numbers(claim))
+    claim_keywords = _normalize_keywords(claim)
+
+    best_related_result: Optional[Dict[str, str]] = None
 
     for result in trusted_results:
         evidence_text = f"{result.get('title', '')} {result.get('snippet', '')}"
-        evidence_numbers = set(_extract_numbers(evidence_text))
 
-        if claim_numbers and claim_numbers.intersection(evidence_numbers):
+        # Step 2: Extract numbers from trusted source snippet.
+        evidence_numbers = set(_extract_numbers(evidence_text))
+        evidence_keywords = _normalize_keywords(evidence_text)
+
+        overlap_count = len(claim_keywords.intersection(evidence_keywords))
+        same_topic = overlap_count >= 2
+
+        # Step 3: Compare numbers first for final class.
+        if claim_numbers and evidence_numbers and claim_numbers == evidence_numbers:
             return (
                 "Verified",
                 result.get("snippet", "Trusted source supports this claim."),
                 result.get("link", ""),
             )
 
-    # Trusted results exist, but the numbers do not align exactly.
-    best = trusted_results[0]
+        if same_topic:
+            best_related_result = result
+
+    # Different numbers but same topic -> Inaccurate.
+    if best_related_result is not None:
+        return (
+            "Inaccurate",
+            best_related_result.get(
+                "snippet",
+                "Related trusted evidence found, but numbers appear different or updated.",
+            ),
+            best_related_result.get("link", ""),
+        )
+
+    # No relevant evidence -> False.
     return (
-        "Inaccurate",
-        best.get("snippet", "Related evidence exists, but values appear updated/different."),
-        best.get("link", ""),
+        "False",
+        "No relevant trusted evidence found for this claim.",
+        trusted_results[0].get("link", ""),
     )
 
 

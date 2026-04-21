@@ -22,7 +22,7 @@ st.write(
 uploaded_file = st.file_uploader("Upload a PDF file", type=["pdf"])
 start_clicked = st.button("Start Verification", type="primary")
 
-# Read key from Streamlit secrets if available (useful in cloud deployment).
+# Read key from Streamlit secrets.
 if "SERPAPI_API_KEY" in st.secrets:
     import os
 
@@ -58,8 +58,3 @@ if start_clicked:
                 table_rows = build_results_table(results)
                 st.success(f"Done. Processed {len(claims)} claims.")
                 st.dataframe(table_rows, use_container_width=True, hide_index=True)
-
-                st.caption(
-                    "Tip: Add SERPAPI_API_KEY in Streamlit secrets or environment variables "
-                    "to improve live verification quality."
-                )
