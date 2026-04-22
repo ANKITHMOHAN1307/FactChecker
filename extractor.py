@@ -11,8 +11,8 @@ import pdfplumber
 
 def extract_text_lines_from_pdf(pdf_file: io.BytesIO) -> List[str]:
     """
-    Extract text and safely split into claims
-    without breaking decimal values like 2.5
+    Extract PDF text and split into proper factual claims
+    without breaking decimal numbers like 5.2
     """
 
     claims = []
@@ -21,18 +21,16 @@ def extract_text_lines_from_pdf(pdf_file: io.BytesIO) -> List[str]:
         for page in pdf.pages:
             text = page.extract_text() or ""
 
-            # Join lines first
+            # Join broken PDF lines
             text = " ".join(
                 line.strip()
                 for line in text.split("\n")
                 if line.strip()
             )
 
-            # Split sentences safely
-            sentences = re.split(
-                r'(?<!\d)\.(?!\d)',
-                text
-            )
+            # Correct sentence split:
+            # split on "." unless next char is a digit
+            sentences = re.split(r'\.(?!\d)', text)
 
             for sentence in sentences:
                 sentence = sentence.strip()
@@ -43,7 +41,7 @@ def extract_text_lines_from_pdf(pdf_file: io.BytesIO) -> List[str]:
                 if sentence.isupper():
                     continue
 
-                # Remove ugly starting words
+                # remove ugly prefixes
                 sentence = re.sub(
                     r'^(and|while|but)\s+',
                     '',
@@ -61,7 +59,7 @@ def extract_text_lines_from_pdf(pdf_file: io.BytesIO) -> List[str]:
 
 def detect_factual_claims(lines: List[str]) -> List[str]:
     """
-    Keep unique meaningful claims
+    Keep only unique claims
     """
 
     unique_claims = []
@@ -73,4 +71,3 @@ def detect_factual_claims(lines: List[str]) -> List[str]:
             unique_claims.append(line)
 
     return unique_claims
-    
