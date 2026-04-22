@@ -71,7 +71,7 @@ if start_clicked:
 
                 # Summary row with all three counts
                 st.caption(
-                    f" Accurate: {accurate_count} | "
+                    f" Verified: {accurate_count} | "
                     f" Inaccurate: {inaccurate_count} | "
                     f" No Evidence Found: {no_evidence_count}"
                 )

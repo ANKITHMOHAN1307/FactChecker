@@ -143,7 +143,7 @@ def verify_claims(claims: List[str]) -> List[Dict]:
 
         # Step 2 — ask Groq to make the final call
         if not groq_key:
-            status = "Inaccurate"
+            status = "No Evidence Found"
         else:
             status = _ask_groq_accuracy(claim, evidence, source_url, groq_key)
 
