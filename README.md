@@ -1,4 +1,7 @@
+
 # FactChecker
+
+[![Live App](https://img.shields.io/badge/Live%20Demo-Streamlit-green?style=for-the-badge&logo=streamlit)](https://factchecker-intern-assessment.streamlit.app/)
 
 A lightweight Streamlit app that extracts factual claims from uploaded PDFs and verifies them using live web evidence.
 
@@ -54,4 +57,4 @@ streamlit run app.py
 
 ## Notes
 - Verification quality depends on source quality and search results.
-- This is a practical assistant, not a legal or academic proof engine.
+- This is an assessment level woking project.
