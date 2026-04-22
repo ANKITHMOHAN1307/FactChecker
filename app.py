@@ -61,7 +61,7 @@ if start_clicked:
                 table_rows = build_results_table(results)
 
                 # Count each status — "False" is now "No Evidence Found"
-                accurate_count = sum(1 for r in results if r["status"] == "Verified")
+                accurate_count = sum(1 for r in results if r["status"] == "Accurate")
                 inaccurate_count = sum(1 for r in results if r["status"] == "Inaccurate")
                 no_evidence_count = sum(1 for r in results if r["status"] == "No Evidence Found")
 
@@ -70,7 +70,7 @@ if start_clicked:
 
                 # Summary row with all three counts
                 st.caption(
-                    f" Verified: {accurate_count} | "
+                    f" Accurate: {accurate_count} | "
                     f" Inaccurate: {inaccurate_count} | "
                     f" No Evidence Found: {no_evidence_count}"
                 )
