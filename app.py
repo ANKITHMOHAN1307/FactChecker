@@ -16,12 +16,15 @@ st.set_page_config(page_title="Fact-Check Web App", page_icon="✅", layout="wid
 st.title("📄 Fact-Check Web App")
 st.write(
     "Upload a PDF, detect factual claims, and verify them using live web search. "
-    "The app labels each claim as Verified, Inaccurate, or False."
+    "The app labels each claim as Accurate, Inaccurate, or No Evidence Found."
 )
 
-# Read API key from Streamlit secrets if available
+# Read API keys from Streamlit secrets if available
 if "SERPAPI_API_KEY" in st.secrets:
     os.environ["SERPAPI_API_KEY"] = st.secrets["SERPAPI_API_KEY"]
+
+if "GROQ_API_KEY" in st.secrets:
+    os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]
 
 if not os.getenv("SERPAPI_API_KEY"):
     st.info("Add SERPAPI_API_KEY in environment/secrets to enable live web verification.")
@@ -36,7 +39,7 @@ def build_results_table(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
         {
             "Extracted Claim": row.get("claim", ""),
             "Status": row.get("status", ""),
-            "Correct Information": row.get("correct_information", ""),
+            "Correct Information": row.get("correct_information", "No evidence found."),
             "Source Link": row.get("source_link", ""),
         }
         for row in rows
@@ -48,7 +51,6 @@ if start_clicked:
         st.warning("Please upload a PDF before starting verification.")
     else:
         with st.spinner("Extracting claims and verifying with live search..."):
-            # Extract lines and detect claim-like statements
             pdf_bytes = io.BytesIO(uploaded_file.read())
             lines = extract_text_lines_from_pdf(pdf_bytes)
             claims = detect_factual_claims(lines)
@@ -56,17 +58,20 @@ if start_clicked:
             if not claims:
                 st.info("No strong factual claims were detected in this PDF.")
             else:
-                # Verify each claim with live web search
                 results = verify_claims(claims)
                 table_rows = build_results_table(results)
+
+                # Count each status — "False" is now "No Evidence Found"
+                accurate_count = sum(1 for r in results if r["status"] == "Accurate")
+                inaccurate_count = sum(1 for r in results if r["status"] == "Inaccurate")
+                no_evidence_count = sum(1 for r in results if r["status"] == "No Evidence Found")
+
                 st.success(f"Done. Processed {len(claims)} claims.")
                 st.dataframe(table_rows, use_container_width=True, hide_index=True)
 
-                # Quick status summary for easier reading
-                verified_count = sum(1 for row in results if row["status"] == "Verified")
-                inaccurate_count = sum(1 for row in results if row["status"] == "Inaccurate")
-                false_count = sum(1 for row in results if row["status"] == "False")
-
+                # Summary row with all three counts
                 st.caption(
-                    f"Verified: {verified_count} | Inaccurate: {inaccurate_count} | False: {false_count}"
+                    f" Accurate: {accurate_count} | "
+                    f" Inaccurate: {inaccurate_count} | "
+                    f" No Evidence Found: {no_evidence_count}"
                 )
