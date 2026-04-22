@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import re
 from typing import List
 
 import pdfplumber
@@ -10,7 +11,8 @@ import pdfplumber
 
 def extract_text_lines_from_pdf(pdf_file: io.BytesIO) -> List[str]:
     """
-    Extract text and split into one claim per sentence
+    Extract text and safely split into claims
+    without breaking decimal values like 2.5
     """
 
     claims = []
@@ -19,15 +21,18 @@ def extract_text_lines_from_pdf(pdf_file: io.BytesIO) -> List[str]:
         for page in pdf.pages:
             text = page.extract_text() or ""
 
-            # join lines first
+            # Join lines first
             text = " ".join(
                 line.strip()
                 for line in text.split("\n")
                 if line.strip()
             )
 
-            # simple sentence split
-            sentences = text.split(".")
+            # Split sentences safely
+            sentences = re.split(
+                r'(?<!\d)\.(?!\d)',
+                text
+            )
 
             for sentence in sentences:
                 sentence = sentence.strip()
@@ -38,8 +43,16 @@ def extract_text_lines_from_pdf(pdf_file: io.BytesIO) -> List[str]:
                 if sentence.isupper():
                     continue
 
-                # add back period
-                sentence = sentence + "."
+                # Remove ugly starting words
+                sentence = re.sub(
+                    r'^(and|while|but)\s+',
+                    '',
+                    sentence,
+                    flags=re.IGNORECASE
+                )
+
+                if not sentence.endswith("."):
+                    sentence += "."
 
                 claims.append(sentence)
 
@@ -48,8 +61,7 @@ def extract_text_lines_from_pdf(pdf_file: io.BytesIO) -> List[str]:
 
 def detect_factual_claims(lines: List[str]) -> List[str]:
     """
-    Keep all meaningful claims
-    No unnecessary filtering
+    Keep unique meaningful claims
     """
 
     unique_claims = []
@@ -61,3 +73,4 @@ def detect_factual_claims(lines: List[str]) -> List[str]:
             unique_claims.append(line)
 
     return unique_claims
+    
