@@ -16,7 +16,7 @@ st.set_page_config(page_title="Fact-Check Web App", page_icon="✅", layout="wid
 st.title("📄 Fact-Check Web App")
 st.write(
     "Upload a PDF, detect factual claims, and verify them using live web search. "
-    "The app labels each claim as Accurate, Inaccurate, or No Evidence Found."
+    "The app labels each claim as Verified, Inaccurate, or No Evidence Found."
 )
 
 # Read API keys from Streamlit secrets if available
@@ -61,7 +61,7 @@ if start_clicked:
                 table_rows = build_results_table(results)
 
                 # Count each status — "False" is now "No Evidence Found"
-                accurate_count = sum(1 for r in results if r["status"] == "Accurate")
+                verified_count = sum(1 for r in results if r["status"] == "Verified")
                 inaccurate_count = sum(1 for r in results if r["status"] == "Inaccurate")
                 no_evidence_count = sum(1 for r in results if r["status"] == "No Evidence Found")
 
@@ -70,7 +70,7 @@ if start_clicked:
 
                 # Summary row with all three counts
                 st.caption(
-                    f" Accurate: {accurate_count} | "
+                    f" Verified: {verified_count} | "
                     f" Inaccurate: {inaccurate_count} | "
                     f" No Evidence Found: {no_evidence_count}"
                 )
