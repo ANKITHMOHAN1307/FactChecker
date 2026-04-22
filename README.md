@@ -1,114 +1,57 @@
-# Fact-Check Web App (Streamlit + Python)
+# FactChecker
 
-A simple web app that uploads a PDF, extracts factual claims, checks those claims against live web data, and marks each claim as **Verified**, **Inaccurate**, or **False**.
+A lightweight Streamlit app that extracts factual claims from uploaded PDFs and verifies them using live web evidence.
 
----
+## Overview
+FactChecker helps you quickly check whether statements in a document are supported by trusted online sources.
 
-## Features
-
-- **Extract** factual claim-like lines from a PDF (stats, years, money, technical values).
-- **Verify** claims with live Google results via SerpAPI.
-- **Report** with clear statuses:
-  - **Verified**: trusted evidence supports the claim.
-  - **Inaccurate**: trusted evidence exists but conflicts/looks outdated.
-  - **False**: no credible evidence found.
-
----
-
-## Tech Stack
-
-- Python
-- Streamlit
-- pdfplumber
-- requests
-- SerpAPI
-
----
+## Project Workflow
+1. Upload a PDF in the Streamlit interface.
+2. `extractor.py` reads PDF text page by page.
+3. Claim-like sentences are split and deduplicated.
+4. `verifier.py` searches each claim via SerpAPI.
+5. Evidence is selected (trusted domains are preferred).
+6. If `GROQ_API_KEY` is available, Groq classifies claims as:
+   - **Verified**
+   - **Inaccurate**
+7. If evidence is missing or unusable, status is **No Evidence Found**.
+8. `app.py` displays results in a table with:
+   - Extracted Claim
+   - Status
+   - Source Link
 
 ## Project Structure
-
 ```text
-/workspace/FactChecker
-├── app.py
-├── extractor.py
-├── verifier.py
-├── requirements.txt
+FactChecker/
+├── app.py            # Streamlit UI and app flow
+├── extractor.py      # PDF text extraction and claim preparation
+├── verifier.py       # Web search, evidence selection, and verdict logic
+├── requirements.txt  # Dependencies
 └── README.md
 ```
 
----
+## Requirements
+- Python 3.10+
+- SerpAPI key (required for web verification)
+- Groq API key (optional, improves classification)
 
-## Local Setup
-
-1. Install dependencies:
-
+## Setup
 ```bash
 pip install -r requirements.txt
-```
-
-2. Add your SerpAPI key:
-
-```bash
 export SERPAPI_API_KEY="your_serpapi_key"
+export GROQ_API_KEY="your_groq_api_key"   # optional
 ```
 
-3. Run app:
-
+## Run the App
 ```bash
 streamlit run app.py
 ```
 
-4. Open the local URL shown by Streamlit and upload your PDF.
-
----
-
-## Deployment (Mandatory Requirement)
-
-Use **Streamlit Community Cloud**:
-
-1. Push this repository to GitHub.
-2. Go to https://share.streamlit.io/ and create a new app.
-3. Set **Main file path** to `app.py`.
-4. In app settings → **Secrets**, add:
-
-```toml
-SERPAPI_API_KEY = "your_serpapi_key"
-```
-
-5. Deploy and copy your public URL.
-
-### After Deploy
-
-- Test by uploading your own PDF.
-- Click **Start Verification**.
-- Review claim-by-claim status and source links.
-
-> Note: Deployment URL depends on your Streamlit account/repo name and is created during your own deploy step.
-
----
-
-## How Verification Works
-
-1. `extractor.py` reads PDF text line by line.
-2. It keeps lines likely to contain factual claims.
-3. `verifier.py` sends each claim to live search.
-4. The verifier checks trusted sources and number overlap.
-5. UI displays final status and source link.
-
----
-
-## Example Output
-
-| Extracted Claim | Status | Correct Information | Source Link |
-|---|---|---|---|
-| "Revenue grew 25% in 2024" | Inaccurate | Trusted sources found, but values do not match this claim. | https://... |
-| "X country population is 1.4 billion" | Verified | Claim is supported by overlapping values in trusted source. | https://... |
-| "Y is the capital of Z" | False | No credible trusted source found for this claim. | https://... |
-
----
+## Output Meaning
+- **Verified**: evidence supports the claim.
+- **Inaccurate**: evidence found, but claim appears incorrect or mismatched.
+- **No Evidence Found**: no reliable supporting evidence retrieved.
 
 ## Notes
-
-- Code is intentionally simple and readable.
-- Comments are kept basic for easy review.
-- You can improve accuracy by expanding trusted sources and adding stronger NLP claim extraction.
+- Verification quality depends on source quality and search results.
+- This is a practical assistant, not a legal or academic proof engine.
