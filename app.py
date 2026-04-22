@@ -39,7 +39,6 @@ def build_results_table(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
         {
             "Extracted Claim": row.get("claim", ""),
             "Status": row.get("status", ""),
-            "Correct Information": row.get("correct_information", "No evidence found."),
             "Source Link": row.get("source_link", ""),
         }
         for row in rows
@@ -62,7 +61,7 @@ if start_clicked:
                 table_rows = build_results_table(results)
 
                 # Count each status — "False" is now "No Evidence Found"
-                accurate_count = sum(1 for r in results if r["status"] == "Accurate")
+                accurate_count = sum(1 for r in results if r["status"] == "Verified")
                 inaccurate_count = sum(1 for r in results if r["status"] == "Inaccurate")
                 no_evidence_count = sum(1 for r in results if r["status"] == "No Evidence Found")
 
