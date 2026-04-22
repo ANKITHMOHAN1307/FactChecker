@@ -1,20 +1,20 @@
-# verifier.py
-
 """
-Simple fact verification using SerpAPI
-No over-complex number matching
-Uses source snippet comparison only
+Simple fact verification using SerpAPI + Groq
+Flow: claim → SerpAPI search → extract evidence → Groq decides Accurate/Inaccurate
 """
 
 from __future__ import annotations
 
+import json
 import os
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple
 
 import requests
 
 
 SERPAPI_URL = "https://serpapi.com/search.json"
+GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODEL = "llama-3.1-8b-instant"
 
 TRUSTED_DOMAINS = [
     "wikipedia.org",
@@ -34,18 +34,11 @@ TRUSTED_DOMAINS = [
 
 
 def is_trusted(link: str) -> bool:
-    """
-    Check trusted source
-    """
-
     return any(domain in link for domain in TRUSTED_DOMAINS)
 
 
 def search_claim(claim: str, api_key: str) -> List[Dict]:
-    """
-    Search full claim using SerpAPI
-    """
-
+    """Search full claim using SerpAPI and return organic results."""
     if not api_key:
         return []
 
@@ -57,111 +50,110 @@ def search_claim(claim: str, api_key: str) -> List[Dict]:
     }
 
     try:
-        response = requests.get(
-            SERPAPI_URL,
-            params=params,
-            timeout=20,
-        )
-
+        response = requests.get(SERPAPI_URL, params=params, timeout=20)
         response.raise_for_status()
-
         data = response.json()
-
         return data.get("organic_results", [])
-
     except Exception:
         return []
 
 
-def classify_claim(claim: str, results: List[Dict]):
+def _fetch_evidence_and_source(
+    claim: str, serpapi_key: str
+) -> Tuple[str, str]:
     """
-    Simple rules:
-
-    1. If no trusted source -> skip
-    2. If source strongly supports claim -> Verified
-    3. Otherwise -> Inaccurate
-
-    Never force false from weak logic
+    Search SerpAPI for the claim, then extract the best evidence text
+    and source URL from trusted results. Falls back to first result if
+    no trusted source is found.
+    Returns (evidence_text, source_url).
     """
+    results = search_claim(claim, serpapi_key)
 
     if not results:
-        return None
+        return "", ""
 
-    trusted_results = []
+    # Prefer trusted sources
+    trusted = [r for r in results if is_trusted(r.get("link", ""))]
+    best = trusted[0] if trusted else results[0]
 
-    for result in results:
-        link = result.get("link", "")
+    evidence = f"{best.get('title', '')} {best.get('snippet', '')}".strip()
+    source_url = best.get("link", "")
 
-        if is_trusted(link):
-            trusted_results.append(result)
+    return evidence, source_url
 
-    if not trusted_results:
-        return None
 
-    claim_lower = claim.lower()
-
-    for result in trusted_results:
-        title = result.get("title", "").lower()
-        snippet = result.get("snippet", "").lower()
-        link = result.get("link", "")
-
-        combined_text = title + " " + snippet
-
-        # Strong keyword overlap
-        important_words = [
-            word for word in claim_lower.split()
-            if len(word) > 3
-        ]
-
-        match_count = 0
-
-        for word in important_words:
-            if word in combined_text:
-                match_count += 1
-
-        # Strong enough support
-        if match_count >= 3:
-            return (
-                "Verified",
-                result.get("snippet", "Supported by trusted source."),
-                link,
-            )
-
-    # If trusted source exists but no strong support
-    first = trusted_results[0]
-
-    return (
-        "Inaccurate",
-        first.get("snippet", "Claim does not fully match trusted source."),
-        first.get("link", ""),
+def _ask_groq_accuracy(
+    claim: str, evidence: str, source_url: str, groq_api_key: str
+) -> str:
+    """Use Groq to classify claim accuracy from provided evidence and source."""
+    headers = {
+        "Authorization": f"Bearer {groq_api_key}",
+        "Content-Type": "application/json",
+    }
+    prompt = (
+        "You are a strict fact-checking assistant. "
+        "Given a claim, evidence text, and source URL, decide if the claim is accurate. "
+        "Respond as JSON only: {\"status\":\"Accurate\"} or {\"status\":\"Inaccurate\"}. "
+        "If evidence is weak, missing, unrelated, or uncertain, choose Inaccurate."
     )
+    user_content = (
+        f"Claim: {claim}\n"
+        f"Evidence: {evidence or 'No evidence text available.'}\n"
+        f"Source URL: {source_url or 'No source URL available.'}"
+    )
+    payload = {
+        "model": GROQ_MODEL,
+        "temperature": 0,
+        "messages": [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": user_content},
+        ],
+        "response_format": {"type": "json_object"},
+    }
+
+    try:
+        response = requests.post(
+            GROQ_ENDPOINT, headers=headers, json=payload, timeout=30
+        )
+        response.raise_for_status()
+        data = response.json()
+        content = data["choices"][0]["message"]["content"]
+        parsed = json.loads(content)
+        status = parsed.get("status", "Inaccurate")
+        return status if status in {"Accurate", "Inaccurate"} else "Inaccurate"
+    except (requests.RequestException, KeyError, IndexError, json.JSONDecodeError):
+        return "Inaccurate"
 
 
 def verify_claims(claims: List[str]) -> List[Dict]:
     """
-    Verify all claims for Streamlit output
+    For each claim:
+      1. Search SerpAPI to find evidence + source URL
+      2. Pass evidence to Groq to decide Accurate / Inaccurate
+      3. Return rows for Streamlit table
     """
-
-    api_key = os.getenv("SERPAPI_API_KEY", "")
+    serpapi_key = os.getenv("SERPAPI_API_KEY", "")   # used for search
+    groq_key = os.getenv("GROQ_API_KEY", "")          # used for AI decision
 
     rows = []
 
     for claim in claims:
-        results = search_claim(claim, api_key)
+        # Step 1 — fetch evidence via SerpAPI
+        evidence, source_url = _fetch_evidence_and_source(claim, serpapi_key)
 
-        classified = classify_claim(claim, results)
+        # Step 2 — ask Groq to make the final call
+        if not groq_key:
+            status = "Inaccurate"
+        else:
+            status = _ask_groq_accuracy(claim, evidence, source_url, groq_key)
 
-        if not classified:
-            continue
-
-        status, correct_information, source_link = classified
-
+        # Step 3 — collect result
         rows.append(
             {
                 "claim": claim,
                 "status": status,
-                "correct_information": correct_information,
-                "source_link": source_link,
+                "correct_information": evidence,
+                "source_link": source_url,
             }
         )
 
