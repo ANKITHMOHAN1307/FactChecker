@@ -1,6 +1,6 @@
 """
 Simple fact verification using SerpAPI + Groq
-Flow: claim → SerpAPI search → extract evidence → Groq decides Accurate/Inaccurate
+Flow: claim → SerpAPI search → extract evidence → Groq decides Verified/Inaccurate
 """
 
 from __future__ import annotations
@@ -92,8 +92,8 @@ def _ask_groq_accuracy(
     }
     prompt = (
         "You are a strict fact-checking assistant. "
-        "Given a claim, evidence text, and source URL, decide if the claim is accurate. "
-        "Respond as JSON only: {\"status\":\"Accurate\"} or {\"status\":\"Inaccurate\"}. "
+        "Given a claim, evidence text, and source URL, decide if the claim is Verified. "
+        "Respond as JSON only: {\"status\":\"Verified\"} or {\"status\":\"Inaccurate\"}. "
         "If evidence is weak, missing, unrelated, or uncertain, choose Inaccurate."
     )
     user_content = (
@@ -120,7 +120,7 @@ def _ask_groq_accuracy(
         content = data["choices"][0]["message"]["content"]
         parsed = json.loads(content)
         status = parsed.get("status", "Inaccurate")
-        return status if status in {"Accurate", "Inaccurate"} else "Inaccurate"
+        return status if status in {"Verified", "Inaccurate"} else "Inaccurate"
     except (requests.RequestException, KeyError, IndexError, json.JSONDecodeError):
         return "Inaccurate"
 
@@ -128,8 +128,8 @@ def _ask_groq_accuracy(
 def verify_claims(claims: List[str]) -> List[Dict]:
     """
     For each claim:
-      1. Search SerpAPI to find evidence + source URL
-      2. Pass evidence to Groq to decide Accurate / Inaccurate
+      1. Searching SerpAPI to find evidence + source URL
+      2. Passing evidence to Groq to decide Verified / Inaccurate
       3. Return rows for Streamlit table
     """
     serpapi_key = os.getenv("SERPAPI_API_KEY", "")   # used for search
@@ -152,7 +152,6 @@ def verify_claims(claims: List[str]) -> List[Dict]:
             {
                 "claim": claim,
                 "status": status,
-                "correct_information": evidence,
                 "source_link": source_url,
             }
         )
